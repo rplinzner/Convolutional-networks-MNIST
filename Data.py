@@ -1,4 +1,6 @@
 from pathlib import Path
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 class DataService:
@@ -31,25 +33,44 @@ class DataService:
         self.test_results.write(line + "\n")
 
     def saveTrainingStats(self, epoch, total_loss, avg_loss, correct, all, train_time, con_matrix):
+        self.saveLineToTrainFile(f"\n")
+
         self.saveLineToTrainFile(f"Epoch: {epoch+1}")
         self.saveLineToTrainFile(f"Total loss: {total_loss}")
         self.saveLineToTrainFile(f"Avg loss: {avg_loss}")
         self.saveLineToTrainFile(
-            f"Accuracy: {correct}/{all} ({ 100. * correct / all})")
+            f"Accuracy: {correct}/{all} ({ 100. * correct / all})%")
         self.saveLineToTrainFile(
             f"Time: {train_time // 60}min {train_time % 60}sek")
 
         self.saveLineToTrainFile('--- Confusion matrix ---')
-        self.saveLineToTrainFile(con_matrix.tolist())
+        self.train_results.write('\n'.join('{}'.format(k)
+                                           for k in con_matrix.tolist()))
+        self.saveLineToTrainFile(f"\n")
 
     def saveTestingStats(self, total_loss, avg_loss, correct, all, train_time, con_matrix, epoch):
+        self.saveLineToTestFile(f"\n")
         self.saveLineToTestFile(f"Epoch: {epoch+1}")
         self.saveLineToTestFile(f"Total loss: {total_loss}")
         self.saveLineToTestFile(f"Avg loss: {avg_loss}")
         self.saveLineToTestFile(
-            f"Accuracy: {correct}/{all} ({ 100. * correct / all})")
+            f"Accuracy: {correct}/{all} ({ 100. * correct / all})%")
         self.saveLineToTestFile(
             f"Time: {train_time // 60}min {train_time % 60}sek")
 
         self.saveLineToTestFile('--- Confusion matrix ---')
-        self.saveLineToTestFile(con_matrix.tolist())
+        self.test_results.write('\n'.join('{}'.format(k)
+                                          for k in con_matrix.tolist()))
+        self.saveLineToTestFile(f"\n")
+
+    def generateTrainChart(self, interval):
+        plt.title('Training average loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Avg loss')
+        plt.plot(np.arange(1, len(self.train_losses) * interval, interval), self.train_losses, label="Training loss")
+        plt.xticks(np.arange(1, len(self.train_losses) * interval, interval))
+        print( len(self.train_losses) * interval)
+        print(self.train_losses)
+        plt.legend()
+        plt.savefig(self.charts_dir + 'plot.png')
+        plt.show()

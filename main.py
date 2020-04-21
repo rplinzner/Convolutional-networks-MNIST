@@ -2,6 +2,7 @@ from Net import Net
 from Data import DataService
 from torch import nn, optim
 from torchvision import datasets, transforms
+from torchvision.utils import save_image
 from time import time
 import torchvision
 import numpy as np
@@ -10,15 +11,20 @@ import ctypes
 ctypes.cdll.LoadLibrary('caffe2_nvrtc.dll')
 
 
-# import matplotlib.pyplot as plt
-
 # Hyperparameters
-num_epochs = 5
+num_epochs = 3
 num_classes = 10
-batch_size = 64
+batch_size = 256
 learning_rate = 0.001
+momentum = 0.5
 
 model_name = 'mymodel'
+feature_extracting_enabled = True  # only for squeezenet
+optimizer_name = 'adam'
+
+log_interval = 10
+chart_interval = 2
+
 
 DATA_PATH = 'C:\\MNISTData'
 
@@ -58,8 +64,6 @@ test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
 # https://adventuresinmachinelearning.com/convolutional-neural-networks-tutorial-in-pytorch/
 # https://towardsdatascience.com/handwritten-digit-mnist-pytorch-977b5338e627
 
-log_interval = 10
-
 
 def train(model, optimizer, criterion, epoch):
     time0 = time()
@@ -83,8 +87,8 @@ def train(model, optimizer, criterion, epoch):
         _, predicted = torch.max(output.data, 1)
         correct += (predicted == labels).sum().item()
 
-        for t, p in zip(labels.view(-1), predicted.view(-1)):
-            conf_matrix[t.long(), p.long()] += 1
+        for labels, predict in zip(labels.view(-1), predicted.view(-1)):
+            conf_matrix[labels.long(), predict.long()] += 1
 
         if i % log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
@@ -94,6 +98,8 @@ def train(model, optimizer, criterion, epoch):
     training_time = time() - time0
     training_loss = running_loss / len(train_loader)
 
+    if epoch % chart_interval == 0:
+        results.train_losses.append(training_loss)
     results.saveTrainingStats(
         epoch, running_loss, training_loss, correct, len(train_loader.dataset), training_time, conf_matrix)
 
@@ -113,7 +119,7 @@ def test(model, criterion, epoch):
     conf_matrix = np.zeros([num_classes, num_classes], int)
 
     with torch.no_grad():
-        for images, labels in test_loader:
+        for i, (images, labels) in enumerate(test_loader):
             images = images.to(comp_unit)
             labels = labels.to(comp_unit)
 
@@ -121,14 +127,24 @@ def test(model, criterion, epoch):
             loss = criterion(output, labels)
 
             _, predicted = torch.max(output.data, 1)
+
+            if epoch == num_epochs - 1:
+                temp = (predicted == labels).squeeze()
+                for j in range(len(images)):
+                    if temp[j].item() == False:
+                        save_image(
+                            images[j], f'{results.photos_dir}{i*len(images)+j}_label_{labels[j]}_predicted_{predicted[j]}.jpg')
+
             test_loss += loss.item()
             correct += (predicted == labels).sum().item()
-            for t, p in zip(labels.view(-1), predicted.view(-1)):
-                conf_matrix[t.long(), p.long()] += 1
+            for labels, predict in zip(labels.view(-1), predicted.view(-1)):
+                conf_matrix[labels.long(), predict.long()] += 1
+
     training_time = time() - time0
     avg_loss = test_loss / len(test_loader)
-    conf_matrix += np.array(confusion_matrix(labels.view(-1),
-                                             predicted.view(-1)))
+
+    for t, p in zip(labels.view(-1), predicted.view(-1)):
+        conf_matrix[t.long(), p.long()] += 1
     results.saveTestingStats(
         test_loss, avg_loss, correct, len(test_loader.dataset), training_time, conf_matrix, epoch)
 
@@ -137,11 +153,20 @@ def test(model, criterion, epoch):
         100. * correct / len(test_loader.dataset), training_time // 60, training_time % 60))
     print(conf_matrix)
 
+# https://pytorch.org/tutorials/beginner/finetuning_torchvision_models_tutorial.html#set-model-parameters-requires-grad-attribute
+
+
+def set_parameter_requires_grad(model, feature_extracting):
+    if feature_extracting:
+        for param in model.parameters():
+            param.requires_grad = False
+
 
 def main():
     if model_name == 'squeezenet':
         model = torchvision.models.squeezenet1_0(
             pretrained=False, num_classes=num_classes)
+        set_parameter_requires_grad(model, feature_extracting_enabled)
         model.classifier[1] = nn.Conv2d(
             512, num_classes, kernel_size=(1, 1), stride=(1, 1))
     else:
@@ -150,14 +175,18 @@ def main():
     model.to(comp_unit)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    if optimizer_name == adam:
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    else:
+        optimizer = optim.SGD(model.parameters(),
+                              lr=learning_rate, momentum=momentum)
 
     for e in range(num_epochs):
         train(model, optimizer, criterion, e)
         test(model, criterion, e)
         torch.save(model.state_dict(), results.model_dir +
                    f'model_epoch_{e}.ckpt')
-
+    results.generateTrainChart(chart_interval)
     print('done')
 
 
