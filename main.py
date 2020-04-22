@@ -12,23 +12,24 @@ ctypes.cdll.LoadLibrary('caffe2_nvrtc.dll')
 
 
 # Hyperparameters
-num_epochs = 3
+num_epochs = 30
 num_classes = 10
-batch_size = 256
+batch_size = 64
 learning_rate = 0.001
 momentum = 0.5
 
-model_name = 'mymodel'
-feature_extracting_enabled = True  # only for squeezenet
+model_name = 'squeezenet'
+feature_extracting_enabled = False  # only for squeezenet - uses extractor from model
+pretrained = True # only for squeezenet
 optimizer_name = 'adam'
 
 log_interval = 10
-chart_interval = 2
+chart_interval = 3
 
 
 DATA_PATH = 'C:\\MNISTData'
 
-EXPERIMENT_NAME = 'my_model_1'
+EXPERIMENT_NAME = 'squeezenet_feature_disabled_pretrained_30_epochs'
 
 RESULTS_STORE_PATH = 'C:\\results\\' + EXPERIMENT_NAME + '\\'
 
@@ -165,17 +166,18 @@ def set_parameter_requires_grad(model, feature_extracting):
 def main():
     if model_name == 'squeezenet':
         model = torchvision.models.squeezenet1_0(
-            pretrained=False, num_classes=num_classes)
+            pretrained=pretrained)
         set_parameter_requires_grad(model, feature_extracting_enabled)
         model.classifier[1] = nn.Conv2d(
             512, num_classes, kernel_size=(1, 1), stride=(1, 1))
+        model.num_classes = num_classes
     else:
         model = Net()
 
     model.to(comp_unit)
 
     criterion = nn.CrossEntropyLoss()
-    if optimizer_name == adam:
+    if optimizer_name == 'adam':
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     else:
         optimizer = optim.SGD(model.parameters(),
